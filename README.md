@@ -17,11 +17,27 @@ pip install -r requirements.txt
 
 ## Usage
 
+### HTTP API
+
 ```bash
 python main.py
+# or: python app.py
 ```
 
-By default this opens `photo_2026-03-28_15-05-13.jpg` in the project folder. Pass another image path:
+Starts **Uvicorn** on **http://127.0.0.1:8000** by default (`HOST` / `PORT` env vars override). Open **http://127.0.0.1:8000/docs** for Swagger, or check **GET http://127.0.0.1:8000/health**.
+
+- **POST /scan** — multipart field `file`: image (JPEG, PNG, …).
+
+If the browser or Postman shows **ECONNRESET** or the connection drops:
+
+- Use **http://** (not **https://**); the dev server is plain HTTP.
+- Prefer **http://127.0.0.1:8000** instead of `localhost` on Windows (avoids IPv6 `::1` vs IPv4-only bind).
+- To listen on all interfaces: `set HOST=0.0.0.0` then connect using your machine’s IPv4 address.
+- Avoid `RELOAD=1` unless you need it; reload spawns a child process and can be flaky on some setups.
+
+### Desktop (OpenCV window)
+
+Pass an image path:
 
 ```bash
 python main.py path/to/photo.jpg

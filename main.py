@@ -3,6 +3,7 @@ import sys
 from typing import Any
 
 import cv2
+import numpy as np
 import requests
 from bs4 import BeautifulSoup
 from pyzbar.pyzbar import decode
@@ -15,6 +16,11 @@ USER_AGENT = (
 def is_ean13(symbology: str) -> bool:
     """pyzbar reports EAN-13 as 'EAN13'."""
     return symbology.upper().replace("-", "") == "EAN13"
+
+
+def symbology_str(barcode: Any) -> str:
+    t = barcode.type
+    return t.decode() if isinstance(t, bytes) else str(t)
 
 
 def _abs_medum_url(href: str | None) -> str | None:
@@ -107,6 +113,57 @@ def lookup_medum_ru(gtin: str) -> dict[str, Any] | None:
     }
 
 
+def scan_image_bgr(img: np.ndarray) -> dict[str, Any]:
+    """Decode all barcodes from a BGR image (OpenCV). Returns JSON-serializable dict."""
+    items: list[dict[str, Any]] = []
+    for barcode in decode(img):
+        if not barcode.data:
+            continue
+        try:
+            code = barcode.data.decode("utf-8")
+        except UnicodeDecodeError:
+            code = barcode.data.decode("latin-1", errors="replace")
+
+        sym = symbology_str(barcode)
+        r = barcode.rect
+        entry: dict[str, Any] = {
+            "data": code,
+            "symbology": sym,
+            "rect": {
+                "x": r.left,
+                "y": r.top,
+                "width": r.width,
+                "height": r.height,
+            },
+        }
+
+        if is_ean13(sym):
+            medum = lookup_medum_ru(code)
+            entry["medum"] = medum
+            entry["medum_url"] = f"https://medum.ru/{code}"
+            if medum is None:
+                entry["medum_note"] = "no_barcode_block_or_request_failed"
+        else:
+            entry["medum"] = None
+            entry["medum_note"] = "skipped_not_ean13"
+
+        items.append(entry)
+
+    return {"barcodes": items}
+
+
+def scan_image_bytes(data: bytes) -> dict[str, Any]:
+    """Decode image file bytes (JPEG, PNG, etc.) and scan barcodes."""
+    if not data:
+        return {"error": "empty_body", "barcodes": []}
+    arr = np.frombuffer(data, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        return {"error": "invalid_or_unsupported_image", "barcodes": []}
+    out = scan_image_bgr(img)
+    return out
+
+
 def print_product_info(info: dict[str, Any]) -> None:
     print("\n--- Medum.ru ---")
     for key, val in info.items():
@@ -123,13 +180,18 @@ def BarcodeReader(image: str) -> None:
         print(f"Could not read image: {image}")
         return
 
-    detected_barcodes = decode(img)
-    if not detected_barcodes:
+    result = scan_image_bgr(img)
+    if not result["barcodes"]:
         print("Barcode Not Detected or your barcode is blank/corrupted!")
         return
 
-    for barcode in detected_barcodes:
-        x, y, w, h = barcode.rect
+    for item in result["barcodes"]:
+        x, y, w, h = (
+            item["rect"]["x"],
+            item["rect"]["y"],
+            item["rect"]["width"],
+            item["rect"]["height"],
+        )
         cv2.rectangle(
             img,
             (x - 10, y - 10),
@@ -138,36 +200,23 @@ def BarcodeReader(image: str) -> None:
             2,
         )
 
-        if not barcode.data:
-            continue
+        print(f"\nDecoded: {item['data']}")
+        print(f"Symbology: {item['symbology']}")
 
-        try:
-            code = barcode.data.decode("utf-8")
-        except UnicodeDecodeError:
-            code = barcode.data.decode("latin-1", errors="replace")
-
-        print(f"\nDecoded: {code}")
-        sym = (
-            barcode.type.decode()
-            if isinstance(barcode.type, bytes)
-            else str(barcode.type)
-        )
-        print(f"Symbology: {sym}")
-
-        if not is_ean13(sym):
+        if not is_ean13(item["symbology"]):
             print(
                 "Medum.ru lookup runs only for EAN-13 barcodes "
                 f"(https://medum.ru/<code>)."
             )
             continue
 
-        info = lookup_medum_ru(code)
-        if info:
-            print_product_info(info)
+        medum = item.get("medum")
+        if medum:
+            print_product_info(medum)
         else:
             print(
                 "\nMedum.ru: no barcode card in HTML (or request failed). "
-                f"Open manually: https://medum.ru/{code}"
+                f"Open manually: https://medum.ru/{item['data']}"
             )
 
     cv2.imshow("Image", img)
@@ -176,5 +225,9 @@ def BarcodeReader(image: str) -> None:
 
 
 if __name__ == "__main__":
-    path = sys.argv[1] if len(sys.argv) > 1 else "photo_2026-03-28_15-05-13.jpg"
-    BarcodeReader(path)
+    if len(sys.argv) > 1:
+        BarcodeReader(sys.argv[1])
+    else:
+        from app import start
+
+        start()
