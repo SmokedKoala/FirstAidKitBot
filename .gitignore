@@ -137,6 +137,9 @@ celerybeat.pid
 # Environments
 .env
 .envrc
+
+# Local secrets (copy from private.properties.example)
+private.properties
 .venv
 env/
 venv/

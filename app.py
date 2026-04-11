@@ -2,6 +2,10 @@
 
 import os
 
+from properties_loader import load_private_properties
+
+load_private_properties()
+
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
 

@@ -1,61 +1,135 @@
 # FirstAidKitBot
 
-A small Python utility that reads **EAN-13** barcodes from an image file, requests the matching page on **[Medum.ru](https://medum.ru/)** (Russian drug reference), and prints structured data parsed from the HTML: linked product names and registration certificates when the site exposes them.
+---
 
-Information from Medum.ru is **reference-only** and is **not** medical advice, diagnosis, or treatment. Always follow a qualified professional’s guidance and the official labeling for your product.
+## Часть 1. Бизнес-логика и назначение продукта
 
-## Requirements
+### Задача
 
-- Python 3.10+ (uses `str | None` style typing)
-- System libraries for **ZBar** (used by `pyzbar` to decode barcodes). On Windows, install a ZBar build and ensure DLLs are on your `PATH`, or use a Python environment where `pyzbar` is already working.
+FirstAidKitBot помогает по **фотографии штрихкода** (формат **EAN-13**) быстро получить **справочную информацию** о связанных с кодом позициях из открытого справочника **[Medum.ru](https://medum.ru/)**: наименования товарных карточек и сведения о регистрационных удостоверениях, если они отображаются на странице кода.
 
-## Install
+Продукт ориентирован на сценарии **учёта аптечных и медицинских товаров**, **проверки упаковки по штрихкоду** и **интеграции в внутренние системы** через HTTP API (загрузка изображения, ответ в формате JSON).
+
+### Что продукт делает и чего не делает
+
+- **Делает:** распознаёт штрихкод на изображении, для EAN-13 запрашивает страницу Medum.ru и извлекает структурированные поля (товары, регистрационные записи, ссылки).
+- **Не делает:** не ставит диагнозы, не назначает лечение, не заменяет врача или фармацевта, не является официальным реестром Минздрава. Все сведения с Medum.ru носят **информационный характер**.
+
+### Ограничения
+
+- Поиск в Medum.ru выполняется **только для штрихкодов типа EAN-13**. Другие форматы (например, Code128) распознаются как значение и тип, но **не отправляются** в Medum.ru.
+- Наличие данных зависит от того, есть ли код в базе Medum.ru и как оформлена HTML-страница; при отсутствии блока с данными ответ может быть пустым по Medum.
+- Качество распознавания зависит от **качества фото**, освещения и резкости штрихкода.
+
+### Ответственность и данные третьих сторон
+
+Использование сведений с [Medum.ru](https://medum.ru/) должно соответствовать **пользовательскому соглашению** и правилам сайта. Сервис **не кэширует и не перепродаёт** контент Medum в составе репозитория; данные запрашиваются **в момент обращения** к публичным страницам.
+
+---
+
+## Часть 2. Техническая документация
+
+### Стек
+
+| Компонент | Назначение |
+|-----------|------------|
+| Python 3.10+ | Язык и типизация |
+| PostgreSQL | БД для хранения инфо по пользователям |
+| OpenCV (`opencv-python`) | Загрузка и декодирование изображений |
+| pyzbar + ZBar (система) | Распознавание штрихкодов |
+| requests | HTTP-запросы к Medum.ru |
+| BeautifulSoup4 | Разбор HTML страницы штрихкода |
+| FastAPI + Uvicorn | REST API и сервер |
+| NumPy | Буфер изображения для OpenCV |
+| psycopg | Работа с PostgreSQL |
+
+### Установка
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Usage
+На **Windows** для `pyzbar` нужны **DLL ZBar** в `PATH` (или среда, где pyzbar уже работает).
 
-### HTTP API
+### Запуск HTTP-сервера
 
 ```bash
 python main.py
-# or: python app.py
 ```
 
-Starts **Uvicorn** on **http://127.0.0.1:8000** by default (`HOST` / `PORT` env vars override). Open **http://127.0.0.1:8000/docs** for Swagger, or check **GET http://127.0.0.1:8000/health**.
-
-- **POST /scan** — multipart field `file`: image (JPEG, PNG, …).
-
-If the browser or Postman shows **ECONNRESET** or the connection drops:
-
-- Use **http://** (not **https://**); the dev server is plain HTTP.
-- Prefer **http://127.0.0.1:8000** instead of `localhost` on Windows (avoids IPv6 `::1` vs IPv4-only bind).
-- To listen on all interfaces: `set HOST=0.0.0.0` then connect using your machine’s IPv4 address.
-- Avoid `RELOAD=1` unless you need it; reload spawns a child process and can be flaky on some setups.
-
-### Desktop (OpenCV window)
-
-Pass an image path:
+или
 
 ```bash
-python main.py path/to/photo.jpg
+python app.py
 ```
 
-The script draws a box around each detected barcode, prints the decoded value and symbology, and:
+По умолчанию: **http://127.0.0.1:8000** (не HTTPS).
 
-- For **EAN-13**: fetches `https://medum.ru/<digits>` and prints product links and registration lines when present.
-- For **other symbologies** (e.g. Code128): prints a short note that only EAN-13 is looked up on Medum.ru.
+| Переменная окружения | Назначение | Значение по умолчанию |
+|---------------------|------------|------------------------|
+| `HOST` | Адрес привязки | `127.0.0.1` |
+| `PORT` | Порт | `8000` |
+| `RELOAD` | Автоперезагрузка (`1` / `true` / `yes`) | выключено |
 
-## How it works
+**Файл `private.properties`** (в корне проекта, не в Git): строки вида `КЛЮЧ=значение`, комментарии с `#`. При импорте `app` вызывается загрузка в переменные окружения через `setdefault` — уже заданные в ОС переменные **не перезаписываются**. Шаблон без секретов: `private.properties.example` (скопируйте в `private.properties`).
 
-1. **OpenCV** loads the image; **pyzbar** decodes barcodes.
-2. If the symbology is EAN-13, **requests** loads the Medum barcode page.
-3. **BeautifulSoup** parses the `#barcodes` block: product names (`div.products`) and registration certificates (`div.certificates`).
+Пример (PowerShell):
 
-If the page has no barcode block or the request fails, the script suggests opening the same URL in a browser.
+```powershell
+$env:HOST="0.0.0.0"; $env:PORT="8080"; python app.py
+```
 
-## License / data
+### Эндпоинты API
 
-This project does not redistribute Medum.ru content; it only fetches public pages at runtime. Respect [Medum.ru](https://medum.ru/) terms of use and rate limits for your use case.
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/` | Краткая информация и пути к `/docs` и `/health` |
+| GET | `/health` | Проверка работоспособности: `{"status":"ok"}` |
+| GET | `/docs` | Интерактивная документация OpenAPI (Swagger UI) |
+| POST | `/scan` | Тело: `multipart/form-data`, поле **`file`** — файл изображения (JPEG, PNG и др.) |
+
+**Успешный ответ `POST /scan`:** JSON с ключом `barcodes` — массив объектов:
+
+- `data` — строка штрихкода  
+- `symbology` — тип (например, `EAN13`)  
+- `rect` — `x`, `y`, `width`, `height` рамки в координатах изображения  
+- для EAN-13: `medum` (объект или `null`), `medum_url`, при необходимости `medum_note`  
+- для прочих типов: `medum`: `null`, `medum_note`: `skipped_not_ean13`
+
+**Ошибки 400:** пустой файл, неподдерживаемый или битый файл изображения.
+
+### Режим рабочего стола (CLI + окно OpenCV)
+
+```bash
+python main.py путь/к/фото.jpg
+```
+
+Вывод в консоль и окно с подсветкой найденных штрихкодов; для EAN-13 — печать данных Medum.ru.
+
+### Схема обработки (техническая)
+
+1. Изображение читается в память (`cv2.imdecode` для API или `cv2.imread` для файла).  
+2. `pyzbar.decode` возвращает все найденные коды.  
+3. Для каждого EAN-13 вызывается `GET https://medum.ru/{код}`.  
+4. Парсится блок `#barcodes`: `div.products` (список товаров), `div.certificates` (регистрационные удостоверения, дубликаты по полям отфильтровываются).
+
+### Модули проекта
+
+| Файл | Роль |
+|------|------|
+| `main.py` | Логика штрихкода, Medum, `scan_image_bytes`, CLI |
+| `app.py` | Приложение FastAPI, `start()` — запуск Uvicorn |
+| `properties_loader.py` | Чтение `private.properties` |
+| `private.properties` | Локальные настройки (игнорируется Git) |
+| `private.properties.example` | Пример структуры файла (в репозитории) |
+
+### Устранение проблем: обрыв соединения (ECONNRESET)
+
+- Открывать **http://**, не **https://** (сервер разработки без TLS).  
+- Использовать **http://127.0.0.1:PORT** вместо `localhost` на Windows при сбоях из‑за IPv6 (`::1`).  
+- Для доступа с других машин: `HOST=0.0.0.0` и обращение по IPv4-адресу хоста.  
+- Режим `RELOAD=1` на части конфигураций Windows может быть нестабилен; для проверки отключите перезагрузку.
+
+### Юридическое примечание (техническое)
+
+Проект не распространяет базу Medum.ru; выполняются только клиентские HTTP-запросы. Нагрузку и частоту запросов планируйте согласно требованиям стабильности вашей инфраструктуры и правилам внешнего сайта.
