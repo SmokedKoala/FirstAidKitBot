@@ -1,6 +1,8 @@
 """HTTP API: POST an image, receive decoded barcodes and Medum.ru data for EAN-13."""
 
 import os
+from datetime import datetime
+from typing import Any
 
 from properties_loader import load_private_properties
 
@@ -8,8 +10,11 @@ load_private_properties()
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from pydantic import BaseModel
+from psycopg2 import IntegrityError
 
-import main as core
+import scan as scan_core
+import users as users_service
 
 app = FastAPI(
     title="FirstAidKitBot",
@@ -27,7 +32,7 @@ def root() -> dict[str, str]:
 
 
 def _result_from_bytes(data: bytes) -> dict:
-    result = core.scan_image_bytes(data)
+    result = scan_core.scan_image_bytes(data)
     if err := result.get("error"):
         if err == "empty_body":
             raise HTTPException(status_code=400, detail="Empty file body.")
@@ -45,6 +50,29 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+class UserCreateRequest(BaseModel):
+    username: str
+    email: str
+
+
+class UserUpdateRequest(BaseModel):
+    username: str | None = None
+    email: str | None = None
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    created_at: datetime
+
+
+def _ensure_user_found(user: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found.")
+    return user
+
+
 @app.post("/scan")
 async def scan(file: UploadFile = File(..., description="Image file (JPEG, PNG, etc.)")) -> dict:
     """
@@ -54,6 +82,57 @@ async def scan(file: UploadFile = File(..., description="Image file (JPEG, PNG, 
     """
     data = await file.read()
     return _result_from_bytes(data)
+
+
+@app.post("/users", response_model=UserResponse, status_code=201)
+def create_user(payload: UserCreateRequest) -> dict[str, Any]:
+    try:
+        return users_service.create_user(payload.username, payload.email)
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="Username or email already exists.",
+        ) from None
+
+
+@app.get("/users", response_model=list[UserResponse])
+def list_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be >= 1.")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be >= 0.")
+    return users_service.list_users(limit=limit, offset=offset)
+
+
+@app.get("/users/{user_id}", response_model=UserResponse)
+def get_user(user_id: int) -> dict[str, Any]:
+    return _ensure_user_found(users_service.get_user_by_id(user_id), user_id)
+
+
+@app.patch("/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, payload: UserUpdateRequest) -> dict[str, Any]:
+    try:
+        user = users_service.update_user(
+            user_id=user_id,
+            username=payload.username,
+            email=payload.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="Username or email already exists.",
+        ) from None
+    return _ensure_user_found(user, user_id)
+
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int) -> dict[str, bool]:
+    deleted = users_service.delete_user(user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found.")
+    return {"deleted": True}
 
 
 def start() -> None:

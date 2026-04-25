@@ -21,21 +21,49 @@ def connect_to_db():
 
 
 def get_user_by_id(user_id):
-    with connect_to_db() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
-            return cursor.fetchone()
+    # Backward-compatible import path; prefer users.get_user_by_id.
+    from users import get_user_by_id as _get_user_by_id
+
+    return _get_user_by_id(user_id)
+
+
+def create_user(username, email):
+    # Backward-compatible import path; prefer users.create_user.
+    from users import create_user as _create_user
+
+    return _create_user(username, email)
 
 
 def get_user_by_username(username):
-    with connect_to_db() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-            return cursor.fetchone()
+    # Backward-compatible import path; prefer users.get_user_by_username.
+    from users import get_user_by_username as _get_user_by_username
+
+    return _get_user_by_username(username)
 
 
 def get_user_by_email(email):
-    with connect_to_db() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-            return cursor.fetchone()
+    # Backward-compatible import path; prefer users.get_user_by_email.
+    from users import get_user_by_email as _get_user_by_email
+
+    return _get_user_by_email(email)
+
+
+def list_users(limit=100, offset=0):
+    # Backward-compatible import path; prefer users.list_users.
+    from users import list_users as _list_users
+
+    return _list_users(limit=limit, offset=offset)
+
+
+def update_user(user_id, username=None, email=None):
+    # Backward-compatible import path; prefer users.update_user.
+    from users import update_user as _update_user
+
+    return _update_user(user_id=user_id, username=username, email=email)
+
+
+def delete_user(user_id):
+    # Backward-compatible import path; prefer users.delete_user.
+    from users import delete_user as _delete_user
+
+    return _delete_user(user_id)

@@ -105,6 +105,30 @@ docker run --rm -p 3000:3000 -e HOST=0.0.0.0 -e PORT=3000 firstaidkitbot
 
 Приложению может понадобиться PostgreSQL и переменные `PGHOST`, `PGPORT` и т.д. (см. `db.py` и `private.properties.example`) — подключите БД через сеть Docker (`--network`, отдельный контейнер или хост).
 
+### SQL-миграции (контроль схемы БД)
+
+В проекте добавлен встроенный контроль SQL-миграций:
+
+- каталог `migrations/` содержит versioned SQL-файлы формата `NNN__name.sql`
+- таблица `schema_migrations` хранит уже применённые версии и checksum
+- повторный запуск применяет только новые миграции
+
+Запуск:
+
+```bash
+python migrate.py
+```
+
+Первичная миграция:
+
+- `migrations/001__create_users_table.sql` — создаёт таблицу `users`, если её ещё нет
+
+Правила добавления новой миграции:
+
+1. Создайте новый файл `migrations/002__your_change.sql`
+2. Поместите SQL DDL/DML, который должен примениться один раз
+3. Выполните `python migrate.py`
+
 ### Эндпоинты API
 
 | Метод | Путь | Описание |
@@ -146,6 +170,9 @@ python main.py путь/к/фото.jpg
 | `main.py` | Логика штрихкода, Medum, `scan_image_bytes`, CLI |
 | `app.py` | Приложение FastAPI, `start()` — запуск Uvicorn |
 | `properties_loader.py` | Чтение `private.properties` |
+| `migration_control.py` | Применение SQL-миграций и контроль версий |
+| `migrate.py` | CLI-запуск миграций |
+| `migrations/*.sql` | Набор versioned SQL-миграций |
 | `private.properties` | Локальные настройки (игнорируется Git) |
 | `private.properties.example` | Пример структуры файла (в репозитории) |
 
