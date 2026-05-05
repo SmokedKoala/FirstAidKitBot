@@ -7,6 +7,8 @@ import requests
 from bs4 import BeautifulSoup
 from pyzbar.pyzbar import decode
 
+import medicines as medicines_service
+
 USER_AGENT = (
     "FirstAidKitBot/1.0 (medicine barcode lookup; local use; not medical advice)"
 )
@@ -112,6 +114,26 @@ def lookup_medum_ru(gtin: str) -> dict[str, Any] | None:
     }
 
 
+def lookup_medicine_db(gtin: str) -> dict[str, Any] | None:
+    """Try local DB lookup by EAN-13 code."""
+    gtin = gtin.strip()
+    if not gtin.isdigit():
+        return None
+    try:
+        medicine = medicines_service.get_medicine_by_ean13(gtin)
+    except Exception:
+        # Keep scanner resilient even if DB is unavailable.
+        return None
+    if medicine is None:
+        return None
+    return {
+        "source": "local_database",
+        "id": medicine["id"],
+        "ean13_code": medicine["ean13_code"],
+        "medicine_name": medicine["medicine_name"],
+    }
+
+
 def scan_image_bgr(img: np.ndarray) -> dict[str, Any]:
     """Decode all barcodes from a BGR image (OpenCV). Returns JSON-serializable dict."""
     items: list[dict[str, Any]] = []
@@ -137,12 +159,21 @@ def scan_image_bgr(img: np.ndarray) -> dict[str, Any]:
         }
 
         if is_ean13(sym):
-            medum = lookup_medum_ru(code)
-            entry["medum"] = medum
-            entry["medum_url"] = f"https://medum.ru/{code}"
-            if medum is None:
-                entry["medum_note"] = "no_barcode_block_or_request_failed"
+            medicine = lookup_medicine_db(code)
+            entry["medicine"] = medicine
+            if medicine is not None:
+                entry["lookup_source"] = "database"
+                entry["medum"] = None
+                entry["medum_note"] = "skipped_found_in_database"
+            else:
+                entry["lookup_source"] = "medum"
+                medum = lookup_medum_ru(code)
+                entry["medum"] = medum
+                entry["medum_url"] = f"https://medum.ru/{code}"
+                if medum is None:
+                    entry["medum_note"] = "no_barcode_block_or_request_failed"
         else:
+            entry["medicine"] = None
             entry["medum"] = None
             entry["medum_note"] = "skipped_not_ean13"
 

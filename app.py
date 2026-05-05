@@ -13,6 +13,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from psycopg2 import IntegrityError
 
+import medicines as medicines_service
 import scan as scan_core
 import users as users_service
 
@@ -67,6 +68,12 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
+class MedicineResponse(BaseModel):
+    id: int
+    ean13_code: str
+    medicine_name: str
+
+
 def _ensure_user_found(user: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
     if user is None:
         raise HTTPException(status_code=404, detail=f"User {user_id} not found.")
@@ -102,6 +109,15 @@ def list_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset must be >= 0.")
     return users_service.list_users(limit=limit, offset=offset)
+
+
+@app.get("/medicines", response_model=list[MedicineResponse])
+def list_medicines(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be >= 1.")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be >= 0.")
+    return medicines_service.list_medicines(limit=limit, offset=offset)
 
 
 @app.get("/users/{user_id}", response_model=UserResponse)
