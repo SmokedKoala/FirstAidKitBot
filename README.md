@@ -137,6 +137,8 @@ python migrate.py
 | GET | `/health` | Проверка работоспособности: `{"status":"ok"}` |
 | GET | `/docs` | Интерактивная документация OpenAPI (Swagger UI) |
 | POST | `/scan` | Тело: `multipart/form-data`, поле **`file`** — файл изображения (JPEG, PNG и др.) |
+| POST | `/first-aid-kits` | Создание аптечки и (опционально) связей с пользователями (many-to-many) |
+| POST | `/first-aid-kits/{first_aid_kit_id}/medicines` | Добавление лекарства в аптечку |
 
 **Успешный ответ `POST /scan`:** JSON с ключом `barcodes` — массив объектов:
 
@@ -147,6 +149,48 @@ python migrate.py
 - для прочих типов: `medum`: `null`, `medum_note`: `skipped_not_ean13`
 
 **Ошибки 400:** пустой файл, неподдерживаемый или битый файл изображения.
+
+**Создание аптечки `POST /first-aid-kits`:**
+
+- Тело JSON:
+  - `title` — название аптечки (обязательное поле, не пустая строка)
+  - `user_ids` — массив `id` пользователей для связи с аптечкой (опционально)
+- Успех: `201 Created`, возвращается объект аптечки: `id`, `title`, `created_at`
+- Ошибки:
+  - `400` — пустое `title`
+  - `404` — один или несколько пользователей из `user_ids` не найдены
+
+Пример:
+
+```json
+{
+  "title": "Home kit",
+  "user_ids": [1, 2]
+}
+```
+
+**Добавление лекарства `POST /first-aid-kits/{first_aid_kit_id}/medicines`:**
+
+- Тело JSON:
+  - `name` — название лекарства
+  - `number_of_drugs` — количество (целое число, `>= 0`)
+  - `expiration_date` — срок годности в формате `YYYY-MM-DD`
+  - `description` — описание
+- Успех: `201 Created`, возвращается созданная запись лекарства в аптечке
+- Ошибки:
+  - `400` — пустые `name`/`description` или `number_of_drugs < 0`
+  - `404` — аптечка не найдена
+
+Пример:
+
+```json
+{
+  "name": "Paracetamol",
+  "number_of_drugs": 10,
+  "expiration_date": "2027-12-31",
+  "description": "500 mg tablets"
+}
+```
 
 ### Режим рабочего стола (CLI + окно OpenCV)
 

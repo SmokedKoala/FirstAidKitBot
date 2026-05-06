@@ -126,6 +126,7 @@ def lookup_medicine_db(gtin: str) -> dict[str, Any] | None:
         return None
     if medicine is None:
         return None
+    print("Got medicine from database: ", medicine)
     return {
         "source": "local_database",
         "id": medicine["id"],
