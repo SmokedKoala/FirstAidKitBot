@@ -20,8 +20,7 @@ load_private_properties()
 app = FastAPI(
     title="FirstAidKitBot",
     description=(
-        "Upload an image containing barcodes. EAN-13 codes are resolved against "
-        "[Medum.ru](https://medum.ru/). Reference only, not medical advice."
+        "API для работы с аптечками и лекарствами"
     ),
     version="1.0.0",
 )
