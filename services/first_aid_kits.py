@@ -94,6 +94,23 @@ def get_first_aid_kit_by_id(first_aid_kit_id):
             return _row_to_first_aid_kit(cursor.fetchone())
 
 
+def list_first_aid_kits_for_user(user_id: int):
+    with connect_to_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT fak.id, fak.title, fak.created_at
+                FROM first_aid_kits fak
+                INNER JOIN user_first_aid_kits ufak
+                    ON ufak.first_aid_kit_id = fak.id
+                WHERE ufak.user_id = %s
+                ORDER BY fak.id
+                """,
+                (user_id,),
+            )
+            return [_row_to_first_aid_kit(row) for row in cursor.fetchall()]
+
+
 def users_exist(user_ids):
     if not user_ids:
         return True

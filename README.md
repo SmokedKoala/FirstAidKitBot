@@ -40,6 +40,7 @@ FirstAidKitBot помогает по **фотографии штрихкода**
 | requests | HTTP-запросы к Medum.ru |
 | BeautifulSoup4 | Разбор HTML страницы штрихкода |
 | FastAPI + Uvicorn | REST API и сервер |
+| python-telegram-bot | Telegram-бот (long polling) |
 | NumPy | Буфер изображения для OpenCV |
 | psycopg | Работа с PostgreSQL |
 
@@ -51,7 +52,9 @@ pip install -r requirements.txt
 
 На **Windows** для `pyzbar` нужны **DLL ZBar** в `PATH` (или среда, где pyzbar уже работает).
 
-### Запуск HTTP-сервера
+### Запуск (HTTP API и Telegram)
+
+Одной командой поднимаются **REST API** и **Telegram-бот** (если задан токен):
 
 ```bash
 python main.py
@@ -63,15 +66,55 @@ python main.py
 python app.py
 ```
 
-По умолчанию: **http://127.0.0.1:8000** (не HTTPS).
+По умолчанию API: **http://127.0.0.1:8000** (не HTTPS). Бот стартует в том же процессе (long polling) при наличии `TELEGRAM_BOT_TOKEN` в `private.properties` или в переменных окружения. В логах должно появиться сообщение `Telegram bot polling started.`
+
+**Только Telegram-бот** (без HTTP API):
+
+```bash
+python endpoints/telegram_bot.py
+```
+
+Не запускайте бота вторым процессом, пока уже работает `python main.py` с тем же токеном — Telegram допускает только один активный polling на бот.
 
 | Переменная окружения | Назначение | Значение по умолчанию |
 |---------------------|------------|------------------------|
-| `HOST` | Адрес привязки | `127.0.0.1` |
-| `PORT` | Порт | `8000` |
-| `RELOAD` | Автоперезагрузка (`1` / `true` / `yes`) | выключено |
+| `HOST` | Адрес привязки API | `127.0.0.1` |
+| `PORT` | Порт API | `8000` |
+| `RELOAD` | Автоперезагрузка API (`1` / `true` / `yes`) | выключено |
+| `TELEGRAM_BOT_TOKEN` | Токен бота от [@BotFather](https://t.me/BotFather) | не задан — бот не стартует, API работает |
 
 **Файл `private.properties`** (в корне проекта, не в Git): строки вида `КЛЮЧ=значение`, комментарии с `#`. При импорте `app` вызывается загрузка в переменные окружения через `setdefault` — уже заданные в ОС переменные **не перезаписываются**. Шаблон без секретов: `private.properties.example` (скопируйте в `private.properties`).
+
+Пример `private.properties` для API и бота:
+
+```properties
+HOST=127.0.0.1
+PORT=8000
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+```
+
+Если ранее для бота настраивался **webhook**, перед polling удалите его (подставьте свой токен):
+
+`https://api.telegram.org/bot<TOKEN>/deleteWebhook`
+
+Перед первым использованием команд бота примените миграции (`python migrate.py`), в том числе `004__add_telegram_id_to_users.sql` — привязка аккаунта Telegram к записи в таблице `users`.
+
+### Команды Telegram-бота
+
+| Команда | Описание |
+|---------|----------|
+| `/start` | Справка по командам |
+| `/create_first_aid_kit <название>` | Создать аптечку и привязать к вашему Telegram-аккаунту |
+| `/my_first_aid_kits` | Список аптечек текущего пользователя |
+
+Примеры в чате с ботом:
+
+```
+/create_first_aid_kit Домашняя аптечка
+/my_first_aid_kits
+```
+
+При первом обращении для Telegram-пользователя автоматически создаётся запись в `users` (поле `telegram_id`).
 
 Пример (PowerShell):
 
@@ -122,6 +165,7 @@ python migrate.py
 Первичная миграция:
 
 - `migrations/001__create_users_table.sql` — создаёт таблицу `users`, если её ещё нет
+- `migrations/004__add_telegram_id_to_users.sql` — колонка `telegram_id` для привязки к боту
 
 Правила добавления новой миграции:
 
@@ -211,8 +255,10 @@ python main.py путь/к/фото.jpg
 
 | Файл | Роль |
 |------|------|
-| `main.py` | Логика штрихкода, Medum, `scan_image_bytes`, CLI |
-| `app.py` | Приложение FastAPI, `start()` — запуск Uvicorn |
+| `main.py` | Логика штрихкода, Medum, `scan_image_bytes`, CLI; без аргументов — запуск API и Telegram |
+| `app.py` | Точка входа: `start()` — Uvicorn + Telegram (через lifespan FastAPI) |
+| `endpoints/api.py` | Маршруты REST API, lifespan для бота |
+| `endpoints/telegram_bot.py` | Обработчики Telegram; отдельный запуск только бота |
 | `properties_loader.py` | Чтение `private.properties` |
 | `migration_control.py` | Применение SQL-миграций и контроль версий |
 | `migrate.py` | CLI-запуск миграций |
@@ -225,7 +271,7 @@ python main.py путь/к/фото.jpg
 - Открывать **http://**, не **https://** (сервер разработки без TLS).  
 - Использовать **http://127.0.0.1:PORT** вместо `localhost` на Windows при сбоях из‑за IPv6 (`::1`).  
 - Для доступа с других машин: `HOST=0.0.0.0` и обращение по IPv4-адресу хоста.  
-- Режим `RELOAD=1` на части конфигураций Windows может быть нестабилен; для проверки отключите перезагрузку.
+- Режим `RELOAD=1` на части конфигураций Windows может быть нестабилен; для проверки отключите перезагрузку. С `RELOAD=1` при изменении файлов процесс перезапускается и бот переподключается — для отладки Telegram удобнее `RELOAD=0` или отдельный запуск `python endpoints/telegram_bot.py`.
 
 ### Юридическое примечание (техническое)
 

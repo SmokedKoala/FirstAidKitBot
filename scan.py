@@ -7,8 +7,6 @@ import requests
 from bs4 import BeautifulSoup
 from pyzbar.pyzbar import decode
 
-import medicines as medicines_service
-
 USER_AGENT = (
     "FirstAidKitBot/1.0 (medicine barcode lookup; local use; not medical advice)"
 )
@@ -120,6 +118,8 @@ def lookup_medicine_db(gtin: str) -> dict[str, Any] | None:
     if not gtin.isdigit():
         return None
     try:
+        from services import medicines as medicines_service
+
         medicine = medicines_service.get_medicine_by_ean13(gtin)
     except Exception:
         # Keep scanner resilient even if DB is unavailable.

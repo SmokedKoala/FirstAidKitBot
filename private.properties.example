@@ -6,4 +6,7 @@
 # PORT=8000
 # RELOAD=0
 #
+# Telegram-бот (вместе с API: python main.py или python app.py):
+# TELEGRAM_BOT_TOKEN=123456789
+#
 # Уже заданные в системе переменные окружения имеют приоритет над этим файлом.

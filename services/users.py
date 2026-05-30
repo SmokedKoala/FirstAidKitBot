@@ -9,6 +9,7 @@ def _row_to_user(row):
         "username": row[1],
         "email": row[2],
         "created_at": row[3],
+        "telegram_id": row[4] if len(row) > 4 else None,
     }
 
 
@@ -44,6 +45,46 @@ def get_user_by_email(email):
     with connect_to_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+            return _row_to_user(cursor.fetchone())
+
+
+def get_user_by_telegram_id(telegram_id: int):
+    with connect_to_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM users WHERE telegram_id = %s",
+                (telegram_id,),
+            )
+            return _row_to_user(cursor.fetchone())
+
+
+def get_or_create_by_telegram_id(
+    telegram_id: int, telegram_username: str | None = None
+):
+    """Return app user linked to a Telegram account, creating one if needed."""
+    existing = get_user_by_telegram_id(telegram_id)
+    if existing is not None:
+        return existing
+
+    base_username = (telegram_username or f"user_{telegram_id}").lstrip("@")[:64]
+    username = base_username
+    suffix = 0
+    while get_user_by_username(username) is not None:
+        suffix += 1
+        username = f"{base_username}_{suffix}"[:64]
+
+    email = f"tg_{telegram_id}@telegram.local"
+
+    with connect_to_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO users (username, email, telegram_id)
+                VALUES (%s, %s, %s)
+                RETURNING *
+                """,
+                (username, email, telegram_id),
+            )
             return _row_to_user(cursor.fetchone())
 
 

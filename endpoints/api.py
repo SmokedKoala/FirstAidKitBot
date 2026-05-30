@@ -1,6 +1,7 @@
 """HTTP API: POST an image, receive decoded barcodes and Medum.ru data for EAN-13."""
 
 import os
+from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any
 
@@ -9,6 +10,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from psycopg2 import IntegrityError
 
+from endpoints.telegram_bot import telegram_lifespan
 from properties_loader import load_private_properties
 from services import first_aid_kits as first_aid_kits_service
 from services import medicines as medicines_service
@@ -17,12 +19,20 @@ from services.scan_service import scan_image_bytes
 
 load_private_properties()
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with telegram_lifespan():
+        yield
+
+
 app = FastAPI(
     title="FirstAidKitBot",
     description=(
         "API для работы с аптечками и лекарствами"
     ),
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
