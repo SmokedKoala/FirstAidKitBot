@@ -111,6 +111,44 @@ def list_first_aid_kits_for_user(user_id: int):
             return [_row_to_first_aid_kit(row) for row in cursor.fetchall()]
 
 
+def rename_first_aid_kit(kit_id: int, user_id: int, new_title: str):
+    """Rename a kit. Returns updated kit dict, or None if not found / not owned by user."""
+    with connect_to_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE first_aid_kits
+                SET title = %s
+                WHERE id = %s
+                  AND EXISTS (
+                      SELECT 1 FROM user_first_aid_kits
+                      WHERE first_aid_kit_id = %s AND user_id = %s
+                  )
+                RETURNING id, title, created_at
+                """,
+                (new_title, kit_id, kit_id, user_id),
+            )
+            return _row_to_first_aid_kit(cursor.fetchone())
+
+
+def delete_first_aid_kit(kit_id: int, user_id: int) -> bool:
+    """Delete a kit owned by user. Returns True if deleted, False if not found / not owned."""
+    with connect_to_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM first_aid_kits
+                WHERE id = %s
+                  AND EXISTS (
+                      SELECT 1 FROM user_first_aid_kits
+                      WHERE first_aid_kit_id = %s AND user_id = %s
+                  )
+                """,
+                (kit_id, kit_id, user_id),
+            )
+            return cursor.rowcount > 0
+
+
 def users_exist(user_ids):
     if not user_ids:
         return True
